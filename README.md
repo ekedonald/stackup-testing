@@ -1,0 +1,3 @@
+# Building a Delivery Tracking System with QuestDB and Golang
+
+Real-time data tracking is essential for monitoring transportation of goods and services. I used Golang to build an application that simulates GPS movement, ingest the time-series data in QuestDB and there’s a REST API that exposes the real-time data and metrics. We will leverage Docker to integrate the backend, QuestDB as the time-series database and a data-source for Grafana visualization.
