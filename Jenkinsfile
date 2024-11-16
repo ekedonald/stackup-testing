@@ -6,7 +6,7 @@ pipeline {
         DOCKER_TAG = "${BUILD_NUMBER}"
         PEM_PATH = "/tmp/deploy-key-${BUILD_NUMBER}.pem"
         TEMP_DIR = "/tmp/deployment-${BUILD_NUMBER}"
-        GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'  // Replace with your actual git repo URL
+        GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'
     }
     
     stages {
@@ -67,19 +67,25 @@ pipeline {
                             scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 .env \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
 
-                            # Execute deployment commands on remote server
+                            # Execute deployment commands on remote server with correct directory navigation
                             ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 \$REMOTE_USER@\$REMOTE_HOST '\
-                                if [ ! -d "\$REMOTE_DIR/.git" ]; then
-                                    echo "Git repository not found. Performing fresh clone..."
-                                    rm -rf \$REMOTE_DIR
-                                    git clone ${GIT_REPO} \$REMOTE_DIR
-                                else
-                                    echo "Git repository exists. Performing pull..."
+                                if [ -d "\$REMOTE_DIR" ]; then
                                     cd \$REMOTE_DIR
-                                    git fetch --all
-                                    git reset --hard origin/main
-                                    git pull
+                                    if [ -d ".git" ]; then
+                                        echo "Git repository exists. Performing pull..."
+                                        git fetch --all
+                                        git reset --hard origin/main
+                                        git pull
+                                    else
+                                        echo "Directory exists but is not a git repository. Removing and cloning fresh..."
+                                        cd ..
+                                        rm -rf \$REMOTE_DIR
+                                        git clone ${GIT_REPO} \$REMOTE_DIR
+                                    fi
+                                else
+                                    echo "Directory does not exist. Performing fresh clone..."
+                                    git clone ${GIT_REPO} \$REMOTE_DIR
                                 fi && \
                                 cp ${TEMP_DIR}/.env \$REMOTE_DIR/ && \
                                 docker load < ${TEMP_DIR}/${DOCKER_IMAGE}.tar && \
