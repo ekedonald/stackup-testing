@@ -62,6 +62,7 @@ pipeline {
 
                             scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 ${DOCKER_IMAGE}.tar \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
+                                
                             scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 .env \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
 
