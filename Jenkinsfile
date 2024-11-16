@@ -4,22 +4,25 @@ pipeline {
     environment {
         DOCKER_IMAGE = 'delivery-tracker'
         DOCKER_TAG = "${BUILD_NUMBER}"
-        REMOTE_USER = 'ubuntu'
-        REMOTE_HOST = '52.90.24.129'
-        REMOTE_DIR = '/home/ubuntu/stackup-testing'  // Updated to direct stackup directory
         PEM_PATH = "/tmp/deploy-key-${BUILD_NUMBER}.pem"
+        TEMP_DIR = "/tmp/deployment-${BUILD_NUMBER}"
+        GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'  // Replace with your actual git repo URL
     }
     
     stages {
         stage('Setup SSH') {
             steps {
                 script {
-                    withCredentials([sshUserPrivateKey(credentialsId: 'ssh-pem-key', 
-                                                     keyFileVariable: 'SSH_KEY')]) {
+                    withCredentials([
+                        string(credentialsId: 'remote-user', variable: 'REMOTE_USER'),
+                        string(credentialsId: 'remote-host', variable: 'REMOTE_HOST'),
+                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR'),
+                        sshUserPrivateKey(credentialsId: 'ssh-pem-key', keyFileVariable: 'SSH_KEY')
+                    ]) {
                         sh """
                             cp "\$SSH_KEY" ${PEM_PATH}
                             chmod 600 ${PEM_PATH}
-                            ssh-keyscan -H ${REMOTE_HOST} >> /tmp/known_hosts_${BUILD_NUMBER}
+                            ssh-keyscan -H \$REMOTE_HOST >> /tmp/known_hosts_${BUILD_NUMBER}
                         """
                     }
                 }
@@ -45,31 +48,47 @@ pipeline {
             }
         }
         
-        stage('Transfer Files to Remote') {
+        stage('Transfer and Deploy') {
             steps {
                 script {
-                    sh """
-                        scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
-                            ${DOCKER_IMAGE}.tar ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/
-                        scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
-                            .env ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/
-                    """
-                }
-            }
-        }
-        
-        stage('Deploy on Remote Server') {
-            steps {
-                script {
-                    sh """
-                        ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
-                            ${REMOTE_USER}@${REMOTE_HOST} '\
-                            cd ${REMOTE_DIR} && \
-                            docker load < ${DOCKER_IMAGE}.tar && \
-                            rm ${DOCKER_IMAGE}.tar && \
-                            sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
-                            docker compose up -d'
-                    """
+                    withCredentials([
+                        string(credentialsId: 'remote-user', variable: 'REMOTE_USER'),
+                        string(credentialsId: 'remote-host', variable: 'REMOTE_HOST'),
+                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR')
+                    ]) {
+                        // Create temp directory and transfer files
+                        sh """
+                            ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
+                                \$REMOTE_USER@\$REMOTE_HOST '\
+                                mkdir -p ${TEMP_DIR}'
+
+                            scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
+                                ${DOCKER_IMAGE}.tar \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
+                            scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
+                                .env \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
+
+                            # Execute deployment commands on remote server
+                            ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
+                                \$REMOTE_USER@\$REMOTE_HOST '\
+                                if [ ! -d "\$REMOTE_DIR/.git" ]; then
+                                    echo "Git repository not found. Performing fresh clone..."
+                                    rm -rf \$REMOTE_DIR
+                                    git clone ${GIT_REPO} \$REMOTE_DIR
+                                else
+                                    echo "Git repository exists. Performing pull..."
+                                    cd \$REMOTE_DIR
+                                    git fetch --all
+                                    git reset --hard origin/main
+                                    git pull
+                                fi && \
+                                mv ${TEMP_DIR}/.env \$REMOTE_DIR/ && \
+                                docker load < ${TEMP_DIR}/${DOCKER_IMAGE}.tar && \
+                                rm -rf ${TEMP_DIR} && \
+                                cd \$REMOTE_DIR && \
+                                sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
+                                docker compose up -d'
+                        """
+                    }
                 }
             }
         }
@@ -77,7 +96,6 @@ pipeline {
     
     post {
         always {
-            // Clean up all temporary files
             sh """
                 rm -f ${PEM_PATH}
                 rm -f /tmp/known_hosts_${BUILD_NUMBER}
