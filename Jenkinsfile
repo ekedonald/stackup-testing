@@ -14,7 +14,7 @@ pipeline {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'env-file-secrets', variable: 'ENV_FILE')]) {
-                        sh 'cp $ENV_FILE .env'
+                        sh 'cp "$ENV_FILE" .env'
                     }
                 }
             }
@@ -40,14 +40,25 @@ pipeline {
                                     sshTransfer(
                                         sourceFiles: "${DOCKER_IMAGE}.tar,.env",
                                         removePrefix: '',
-                                        remoteDirectory: "tmp",
+                                        remoteDirectory: "",  // Changed to empty string to put files directly in /tmp
                                         execCommand: """
                                             # Create temporary directory
                                             mkdir -p ${TMP_DIR}
                                             
-                                            # Move files from default SSH transfer directory to our temp directory
-                                            mv /tmp/${DOCKER_IMAGE}.tar ${TMP_DIR}/
-                                            mv /tmp/.env ${TMP_DIR}/
+                                            # Move files to temp directory with error checking
+                                            if [ -f "/tmp/${DOCKER_IMAGE}.tar" ]; then
+                                                mv "/tmp/${DOCKER_IMAGE}.tar" "${TMP_DIR}/"
+                                            else
+                                                echo "Docker image tar file not found!"
+                                                exit 1
+                                            fi
+                                            
+                                            if [ -f "/tmp/.env" ]; then
+                                                mv "/tmp/.env" "${TMP_DIR}/"
+                                            else
+                                                echo ".env file not found!"
+                                                exit 1
+                                            fi
                                             
                                             # Clone or update git repository
                                             if [ ! -d "${REMOTE_DIR}" ]; then
@@ -83,18 +94,31 @@ pipeline {
                                     sshTransfer(
                                         sourceFiles: '',
                                         removePrefix: '',
-                                        remoteDirectory: "${REMOTE_DIR}",
+                                        remoteDirectory: '',
                                         execCommand: """
+                                            # Verify .env exists in temp directory
+                                            if [ ! -f "${TMP_DIR}/.env" ]; then
+                                                echo ".env file not found in ${TMP_DIR}!"
+                                                exit 1
+                                            fi
+                                            
                                             cd ${REMOTE_DIR}
                                             
-                                            # Move .env file from temp directory to final location
-                                            mv ${TMP_DIR}/.env ${REMOTE_DIR}/
+                                            # Move .env file with error checking
+                                            mv "${TMP_DIR}/.env" "${REMOTE_DIR}/"
                                             
                                             # Clean up temp directory
                                             rm -rf ${TMP_DIR}
                                             
                                             sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml
-                                            docker compose up -d
+                                            
+                                            # Verify .env exists before running docker compose
+                                            if [ -f ".env" ]; then
+                                                docker compose up -d
+                                            else
+                                                echo ".env file not found in ${REMOTE_DIR}!"
+                                                exit 1
+                                            fi
                                         """
                                     )
                                 ],
