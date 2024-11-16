@@ -67,7 +67,7 @@ pipeline {
                             cd ${REMOTE_DIR} && \
                             docker load < ${DOCKER_IMAGE}.tar && \
                             rm ${DOCKER_IMAGE}.tar && \
-                            sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" docker-compose.yaml && \
+                            sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
                             docker compose up -d'
                     """
                 }
@@ -90,7 +90,7 @@ pipeline {
             echo 'Deployment completed successfully!'
         }
         failure {
-            echo 'Deployment failed!!!'
+            echo 'Deployment failed!'
         }
     }
 }
