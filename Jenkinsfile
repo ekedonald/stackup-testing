@@ -41,18 +41,10 @@ pipeline {
                                         removePrefix: '',
                                         remoteDirectory: "${REMOTE_DIR}",
                                         execCommand: """
-                                            if [ ! -d "${REMOTE_DIR}" ]; then
-                                                git clone ${GIT_REPO} ${REMOTE_DIR}
-                                            else
-                                                cd ${REMOTE_DIR}
-                                                git fetch origin
-                                                git reset --hard origin/main
-                                            fi
-                                            
-                                            # Move the transferred files to the correct location
-                                            mv ${REMOTE_DIR}/${DOCKER_IMAGE}.tar ${REMOTE_DIR}/.env ${REMOTE_DIR}/
-                                            
-                                            # Load the Docker image
+                                            cd /home/ubuntu
+                                            git clone ${GIT_REPO}
+                                            mv ${REMOTE_DIR}/${DOCKER_IMAGE}.tar ${REMOTE_DIR}/
+                                            mv .env ${REMOTE_DIR}/
                                             docker load < ${REMOTE_DIR}/${DOCKER_IMAGE}.tar
                                             rm ${REMOTE_DIR}/${DOCKER_IMAGE}.tar
                                         """
