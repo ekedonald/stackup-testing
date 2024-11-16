@@ -14,7 +14,10 @@ pipeline {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'env-file-secrets', variable: 'ENV_FILE')]) {
-                        sh 'cp "$ENV_FILE" .env'
+                        sh '''
+                            cp "$ENV_FILE" .env
+                            ls -la .env  # Debug: verify file exists and permissions
+                        '''
                     }
                 }
             }
@@ -32,6 +35,9 @@ pipeline {
         stage('Transfer Files') {
             steps {
                 script {
+                    // Debug: List files before transfer
+                    sh 'ls -la ${DOCKER_IMAGE}.tar .env'
+                    
                     sshPublisher(
                         publishers: [
                             sshPublisherDesc(
@@ -40,25 +46,34 @@ pipeline {
                                     sshTransfer(
                                         sourceFiles: "${DOCKER_IMAGE}.tar,.env",
                                         removePrefix: '',
-                                        remoteDirectory: "",  // Changed to empty string to put files directly in /tmp
+                                        remoteDirectory: "",
                                         execCommand: """
+                                            # Debug: List files in /tmp after transfer
+                                            echo "Files in /tmp:"
+                                            ls -la /tmp/.env /tmp/${DOCKER_IMAGE}.tar || echo "Files not found in /tmp"
+                                            
                                             # Create temporary directory
                                             mkdir -p ${TMP_DIR}
+                                            echo "Created directory ${TMP_DIR}"
                                             
-                                            # Move files to temp directory with error checking
-                                            if [ -f "/tmp/${DOCKER_IMAGE}.tar" ]; then
-                                                mv "/tmp/${DOCKER_IMAGE}.tar" "${TMP_DIR}/"
-                                            else
-                                                echo "Docker image tar file not found!"
-                                                exit 1
-                                            fi
+                                            # Debug: List current directory
+                                            pwd
+                                            ls -la
                                             
-                                            if [ -f "/tmp/.env" ]; then
-                                                mv "/tmp/.env" "${TMP_DIR}/"
-                                            else
-                                                echo ".env file not found!"
-                                                exit 1
-                                            fi
+                                            # Move files to temp directory with error checking and verbose output
+                                            for file in "/tmp/${DOCKER_IMAGE}.tar" "/tmp/.env"; do
+                                                if [ -f "\$file" ]; then
+                                                    echo "Moving \$file to ${TMP_DIR}/"
+                                                    mv "\$file" "${TMP_DIR}/"
+                                                else
+                                                    echo "File \$file not found!"
+                                                    exit 1
+                                                fi
+                                            done
+                                            
+                                            # Debug: List files in temp directory
+                                            echo "Files in ${TMP_DIR}:"
+                                            ls -la ${TMP_DIR}
                                             
                                             # Clone or update git repository
                                             if [ ! -d "${REMOTE_DIR}" ]; then
@@ -96,6 +111,10 @@ pipeline {
                                         removePrefix: '',
                                         remoteDirectory: '',
                                         execCommand: """
+                                            # Debug: Check temp directory contents
+                                            echo "Contents of ${TMP_DIR}:"
+                                            ls -la ${TMP_DIR} || echo "Directory not found"
+                                            
                                             # Verify .env exists in temp directory
                                             if [ ! -f "${TMP_DIR}/.env" ]; then
                                                 echo ".env file not found in ${TMP_DIR}!"
@@ -105,20 +124,32 @@ pipeline {
                                             cd ${REMOTE_DIR}
                                             
                                             # Move .env file with error checking
+                                            echo "Moving .env file to ${REMOTE_DIR}"
                                             mv "${TMP_DIR}/.env" "${REMOTE_DIR}/"
+                                            
+                                            # Verify the move was successful
+                                            if [ -f ".env" ]; then
+                                                echo ".env file successfully moved to ${REMOTE_DIR}"
+                                            else
+                                                echo "Failed to move .env file to ${REMOTE_DIR}"
+                                                exit 1
+                                            fi
                                             
                                             # Clean up temp directory
                                             rm -rf ${TMP_DIR}
                                             
                                             sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml
                                             
-                                            # Verify .env exists before running docker compose
-                                            if [ -f ".env" ]; then
-                                                docker compose up -d
+                                            # Debug: Verify .env contents (without showing sensitive data)
+                                            echo "Checking .env file:"
+                                            if [ -s ".env" ]; then
+                                                echo ".env file exists and is not empty"
                                             else
-                                                echo ".env file not found in ${REMOTE_DIR}!"
+                                                echo ".env file is empty or missing"
                                                 exit 1
                                             fi
+                                            
+                                            docker compose up -d
                                         """
                                     )
                                 ],
