@@ -7,6 +7,7 @@ pipeline {
         PEM_PATH = "/tmp/deploy-key-${BUILD_NUMBER}.pem"
         TEMP_DIR = "/tmp/deployment-${BUILD_NUMBER}"
         GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'
+        REMOTE_DIR = '/home/ubuntu/stackup-testing'
     }
     
     stages {
@@ -16,7 +17,6 @@ pipeline {
                     withCredentials([
                         string(credentialsId: 'remote-user', variable: 'REMOTE_USER'),
                         string(credentialsId: 'remote-host', variable: 'REMOTE_HOST'),
-                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR'),
                         sshUserPrivateKey(credentialsId: 'ssh-pem-key', keyFileVariable: 'SSH_KEY')
                     ]) {
                         sh """
@@ -53,10 +53,8 @@ pipeline {
                 script {
                     withCredentials([
                         string(credentialsId: 'remote-user', variable: 'REMOTE_USER'),
-                        string(credentialsId: 'remote-host', variable: 'REMOTE_HOST'),
-                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR')
+                        string(credentialsId: 'remote-host', variable: 'REMOTE_HOST')
                     ]) {
-                        // Create temp directory and transfer files
                         sh """
                             ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 \$REMOTE_USER@\$REMOTE_HOST '\
@@ -67,13 +65,13 @@ pipeline {
                             scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 .env \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
 
-                            # Execute deployment commands on remote server
                             ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 \$REMOTE_USER@\$REMOTE_HOST '\
-                                git clone ${GIT_REPO} \$REMOTE_DIR && \
+                                git clone ${GIT_REPO} ${REMOTE_DIR} && \
+                                cp ${TEMP_DIR}/.env ${REMOTE_DIR}/ && \
                                 docker load < ${TEMP_DIR}/${DOCKER_IMAGE}.tar && \
-                                cd \$REMOTE_DIR && \
-                                cp ${TEMP_DIR}/.env \$REMOTE_DIR/ && \
+                                rm -rf ${TEMP_DIR} && \
+                                cd ${REMOTE_DIR} && \
                                 sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
                                 docker compose up -d'
                         """
