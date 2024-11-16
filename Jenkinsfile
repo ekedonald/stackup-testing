@@ -67,6 +67,7 @@ pipeline {
                             cd ${REMOTE_DIR} && \
                             docker load < ${DOCKER_IMAGE}.tar && \
                             rm ${DOCKER_IMAGE}.tar && \
+                            sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" docker-compose.yaml && \
                             docker compose up -d'
                     """
                 }

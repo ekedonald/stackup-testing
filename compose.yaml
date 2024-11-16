@@ -1,7 +1,7 @@
 name: tracker
 services:
   be:
-    image: delivery-tracker:latest
+    build: .
     depends_on:
       - questdb
       - grafana
