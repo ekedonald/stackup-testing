@@ -5,6 +5,7 @@ pipeline {
         DOCKER_IMAGE = 'delivery-tracker'
         DOCKER_TAG = "${BUILD_NUMBER}"
         REMOTE_DIR = '/home/ubuntu/stackup-testing'
+        TMP_DIR = '/tmp/deployment-${BUILD_NUMBER}'
         GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'
     }
     
@@ -39,8 +40,16 @@ pipeline {
                                     sshTransfer(
                                         sourceFiles: "${DOCKER_IMAGE}.tar,.env",
                                         removePrefix: '',
-                                        remoteDirectory: "${REMOTE_DIR}",
+                                        remoteDirectory: "tmp",
                                         execCommand: """
+                                            # Create temporary directory
+                                            mkdir -p ${TMP_DIR}
+                                            
+                                            # Move files from default SSH transfer directory to our temp directory
+                                            mv /tmp/${DOCKER_IMAGE}.tar ${TMP_DIR}/
+                                            mv /tmp/.env ${TMP_DIR}/
+                                            
+                                            # Clone or update git repository
                                             if [ ! -d "${REMOTE_DIR}" ]; then
                                                 git clone ${GIT_REPO} ${REMOTE_DIR}
                                             else
@@ -49,12 +58,9 @@ pipeline {
                                                 git reset --hard origin/main
                                             fi
                                             
-                                            # Move the transferred files to the correct location
-                                            mv ${REMOTE_DIR}/${DOCKER_IMAGE}.tar ${REMOTE_DIR}/.env ${REMOTE_DIR}/
-                                            
                                             # Load the Docker image
-                                            docker load < ${REMOTE_DIR}/${DOCKER_IMAGE}.tar
-                                            rm ${REMOTE_DIR}/${DOCKER_IMAGE}.tar
+                                            docker load < ${TMP_DIR}/${DOCKER_IMAGE}.tar
+                                            rm ${TMP_DIR}/${DOCKER_IMAGE}.tar
                                         """
                                     )
                                 ],
@@ -80,6 +86,13 @@ pipeline {
                                         remoteDirectory: "${REMOTE_DIR}",
                                         execCommand: """
                                             cd ${REMOTE_DIR}
+                                            
+                                            # Move .env file from temp directory to final location
+                                            mv ${TMP_DIR}/.env ${REMOTE_DIR}/
+                                            
+                                            # Clean up temp directory
+                                            rm -rf ${TMP_DIR}
+                                            
                                             sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml
                                             docker compose up -d
                                         """
