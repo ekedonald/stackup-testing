@@ -6,7 +6,7 @@ pipeline {
         DOCKER_TAG = "${BUILD_NUMBER}"
         PEM_PATH = "/tmp/deploy-key-${BUILD_NUMBER}.pem"
         TEMP_DIR = "/tmp/deployment-${BUILD_NUMBER}"
-        GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'
+        GIT_REPO = 'https://github.com/ekedonald/stackup-testing.git'  // Replace with your actual git repo URL
     }
     
     stages {
@@ -16,7 +16,8 @@ pipeline {
                     withCredentials([
                         string(credentialsId: 'remote-user', variable: 'REMOTE_USER'),
                         string(credentialsId: 'remote-host', variable: 'REMOTE_HOST'),
-                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR')
+                        string(credentialsId: 'remote-dir', variable: 'REMOTE_DIR'),
+                        sshUserPrivateKey(credentialsId: 'ssh-pem-key', keyFileVariable: 'SSH_KEY')
                     ]) {
                         sh """
                             cp "\$SSH_KEY" ${PEM_PATH}
@@ -59,8 +60,7 @@ pipeline {
                         sh """
                             ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 \$REMOTE_USER@\$REMOTE_HOST '\
-                                mkdir -p ${TEMP_DIR} && \
-                                mkdir -p \$REMOTE_DIR'
+                                mkdir -p ${TEMP_DIR}'
 
                             scp -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
                                 ${DOCKER_IMAGE}.tar \$REMOTE_USER@\$REMOTE_HOST:${TEMP_DIR}/
@@ -69,11 +69,11 @@ pipeline {
 
                             # Execute deployment commands on remote server
                             ssh -i ${PEM_PATH} -o UserKnownHostsFile=/tmp/known_hosts_${BUILD_NUMBER} \
-                                \$REMOTE_USER@\$REMOTE_HOST 'bash -c '\\''\
+                                \$REMOTE_USER@\$REMOTE_HOST '\
                                 if [ ! -d "\$REMOTE_DIR/.git" ]; then
                                     echo "Git repository not found. Performing fresh clone..."
-                                    rm -rf \$REMOTE_DIR/*
-                                    git clone ${GIT_REPO} \$REMOTE_DIR/
+                                    rm -rf \$REMOTE_DIR
+                                    git clone ${GIT_REPO} \$REMOTE_DIR
                                 else
                                     echo "Git repository exists. Performing pull..."
                                     cd \$REMOTE_DIR
@@ -81,12 +81,12 @@ pipeline {
                                     git reset --hard origin/main
                                     git pull
                                 fi && \
-                                cp ${TEMP_DIR}/.env \$REMOTE_DIR/.env && \
+                                cp ${TEMP_DIR}/.env \$REMOTE_DIR/ && \
                                 docker load < ${TEMP_DIR}/${DOCKER_IMAGE}.tar && \
                                 rm -rf ${TEMP_DIR} && \
                                 cd \$REMOTE_DIR && \
                                 sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
-                                docker compose up -d'\\'
+                                docker compose up -d'
                         """
                     }
                 }
