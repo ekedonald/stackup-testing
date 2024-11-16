@@ -72,7 +72,6 @@ pipeline {
                                 \$REMOTE_USER@\$REMOTE_HOST '\
                                 git clone ${GIT_REPO} \$REMOTE_DIR && \
                                 docker load < ${TEMP_DIR}/${DOCKER_IMAGE}.tar && \
-                                rm -rf ${TEMP_DIR} && \
                                 cd \$REMOTE_DIR && \
                                 cp ${TEMP_DIR}/.env . && \
                                 sed -i "s|build: .|image: ${DOCKER_IMAGE}:${DOCKER_TAG}|g" compose.yaml && \
